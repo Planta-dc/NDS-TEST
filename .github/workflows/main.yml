@@ -1,25 +1,15 @@
-name: Build NDS Homebrew
+name: build
 on:
 push:
 pull_request:
 jobs:
 build:
 runs-on: ubuntu-latest
-container:
-  image: devkitpro/devkitarm:latest
-
+container: devkitpro/devkitarm:latest
 steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
-
-  - name: Build project
-    run: make
-
-  - name: Upload NDS artifact
-    uses: actions/upload-artifact@v4
+  - uses: actions/checkout@v4
+  - run: make
+  - uses: actions/upload-artifact@v4
     with:
-      name: nds-build
-      path: |
-        *.nds
-        **/*.nds
-        
+      name: nds
+      path: '**/*.nds'
