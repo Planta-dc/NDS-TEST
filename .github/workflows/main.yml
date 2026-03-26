@@ -17,9 +17,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build project
+        shell: bash
         run: |
-          # Ensure devkitPro environment variables are set if not in the image's default profile
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=$DEVKITPRO/devkitARM
+          export PATH=$DEVKITARM/bin:$PATH
           make
+ 
 
       - name: Upload NDS artifact
         uses: actions/upload-artifact@v4
