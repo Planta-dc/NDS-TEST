@@ -1,15 +1,31 @@
-name: build
+name: Build NDS Homebrew
+
 on:
-push:
-pull_request:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
 jobs:
-build:
-runs-on: ubuntu-latest
-container: devkitpro/devkitarm:latest
-steps:
-  - uses: actions/checkout@v4
-  - run: make
-  - uses: actions/upload-artifact@v4
-    with:
-      name: nds
-      path: '**/*.nds'
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build project
+        run: |
+          # Ensure devkitPro environment variables are set if not in the image's default profile
+          make
+
+      - name: Upload NDS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nds-build
+          path: |
+            *.nds
+            **/*.nds
+          if-no-files-found: error
