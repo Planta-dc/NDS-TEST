@@ -10,26 +10,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: devkitpro/devkitarm:latest
+      # Use the official BlocksDS image which contains the tools your Makefile needs
+      image: ghcr.io/blocksds/sdk:latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Build project
-        shell: bash
         run: |
-          export DEVKITPRO=/opt/devkitpro
-          export DEVKITARM=$DEVKITPRO/devkitARM
-          export PATH=$DEVKITARM/bin:$PATH
+          # The image sets BLOCKSDS and BLOCKSDSEXT automatically,
+          # but we ensure the environment is ready for the make command.
           make
- 
 
       - name: Upload NDS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nds-build
-          path: |
-            *.nds
-            **/*.nds
+          name: DSi-MP3-Player-Build
+          path: "*.nds"
           if-no-files-found: error
