@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # Use the official BlocksDS image which contains the tools your Makefile needs
-      image: ghcr.io/blocksds/sdk:latest
+      
+      image: ghcr.io/blocksds/sdk:master-latest
 
     steps:
       - name: Checkout repository
