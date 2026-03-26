@@ -15,39 +15,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Install Wonderful Toolchain (GCC for arm-none-eabi) ────────────
+      # ── 2. Cache the entire Wonderful toolchain ───────────────────────────
+      # Keyed on the bootstrap URL so the cache busts when upstream updates.
+      - name: Cache Wonderful Toolchain
+        id: cache-wf
+        uses: actions/cache@v4
+        with:
+          path: /opt/wonderful
+          key: wonderful-blocksds-libmad-x86_64-v1
+
+      # ── 3. Install Wonderful Toolchain + BlocksDS + libmad ────────────────
+      # Only runs on a cache miss.
+      # Bootstrap URL from: https://wonderful.asie.pl/wiki/doku.php?id=getting_started:linux
       - name: Install Wonderful Toolchain
+        if: steps.cache-wf.outputs.cache-hit != 'true'
         run: |
-          curl -LO https://wonderful.asie.pl/files/linux-x86_64/toolchain-gcc-arm-none-eabi.tar.zst
-          sudo mkdir -p /opt/wonderful/toolchain
-          sudo tar -C /opt/wonderful/toolchain -xf toolchain-gcc-arm-none-eabi.tar.zst
-          echo "/opt/wonderful/toolchain/gcc-arm-none-eabi/bin" >> $GITHUB_PATH
+          sudo apt-get install -y ca-certificates
+          sudo mkdir -p /opt/wonderful
+          sudo chown -R "$USER" /opt/wonderful
+          curl -L https://wonderful.asie.pl/bootstrap/wf-bootstrap-x86_64.tar.gz \
+            | tar -xz -C /opt/wonderful
+          /opt/wonderful/bin/wf-pacman -Syu --noconfirm wf-tools
 
-      # ── 3. Install BlocksDS ───────────────────────────────────────────────
-      - name: Install BlocksDS
+      - name: Install BlocksDS via wf-pacman
+        if: steps.cache-wf.outputs.cache-hit != 'true'
         run: |
-          curl -LO https://github.com/blocksds/sdk/releases/latest/download/blocksds-linux-x86_64.tar.gz
-          sudo tar -C /opt -xzf blocksds-linux-x86_64.tar.gz
-          # BlocksDS extracts to /opt/blocksds/core by convention
+          /opt/wonderful/bin/wf-pacman -S --noconfirm blocksds-toolchain
 
-      # ── 4. Install libmad (BlocksDS external package) ─────────────────────
-      - name: Install libmad
+      - name: Install libmad via wf-pacman
+        if: steps.cache-wf.outputs.cache-hit != 'true'
         run: |
-          # wf-pacman is the Wonderful package manager shipped with BlocksDS
-          sudo /opt/wonderful/bin/wf-pacman -Sy --noconfirm blocksds-libmad
+          /opt/wonderful/bin/wf-pacman -S --noconfirm blocksds-libmad
 
-      # ── 5. Build ARM7 and ARM9 in parallel ────────────────────────────────
+      # ── 4. Add Wonderful bin to PATH for all subsequent steps ─────────────
+      - name: Configure environment
+        run: |
+          echo "/opt/wonderful/bin" >> $GITHUB_PATH
+          echo "WONDERFUL_TOOLCHAIN=/opt/wonderful" >> $GITHUB_ENV
+          echo "BLOCKSDS=/opt/wonderful/thirdparty/blocksds/core" >> $GITHUB_ENV
+          echo "BLOCKSDSEXT=/opt/wonderful/thirdparty/blocksds/external" >> $GITHUB_ENV
+
+      # ── 5. Build ARM7 ─────────────────────────────────────────────────────
       - name: Build ARM7
         run: make -f arm7/Makefile -j$(nproc)
 
+      # ── 6. Build ARM9 ─────────────────────────────────────────────────────
       - name: Build ARM9
         run: make -f arm9/Makefile -j$(nproc)
 
-      # ── 6. Link final ROM ─────────────────────────────────────────────────
+      # ── 7. Link final ROM ─────────────────────────────────────────────────
       - name: Link ROM
         run: make DSi_MP3_Player.nds
 
-      # ── 7. Verify ROM size (DSi card limit: 32 MB) ────────────────────────
+      # ── 8. Verify ROM size (DSi card limit: 32 MB) ────────────────────────
       - name: Verify ROM size
         run: |
           SIZE=$(stat -c%s DSi_MP3_Player.nds)
@@ -58,7 +78,7 @@ jobs:
             exit 1
           fi
 
-      # ── 8. Upload .nds as a build artifact ────────────────────────────────
+      # ── 9. Upload .nds as a build artifact ────────────────────────────────
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4
         with:
@@ -66,7 +86,7 @@ jobs:
           path: DSi_MP3_Player.nds
           retention-days: 14
 
-      # ── 9. Comment download link on pull requests ─────────────────────────
+      # ── 10. Comment download link on pull requests ────────────────────────
       - name: Comment on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -80,8 +100,7 @@ jobs:
               body: `### Build succeeded\n\nDownload **DSi_MP3_Player.nds** from the [Actions run](${runUrl}) artifacts tab.\n\nCommit: \`${context.sha.slice(0,7)}\``
             });
 
-      # ── 10. Annotate failure clearly ──────────────────────────────────────
+      # ── 11. Annotate failure clearly ──────────────────────────────────────
       - name: Annotate on failure
         if: failure()
-        run: |
-          echo "::error::Build failed — check the steps above for details"
+        run: echo "::error::Build failed — check the steps above for details"
