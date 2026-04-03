@@ -1,27 +1,85 @@
-name: Build NDS App
+name: Build DSi MP3 Player
 
 on:
   push:
-    branches: ["*"]
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: skylyrac/blocksds:slim-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup environment
-        run: git config --global safe.directory '*'
+      - name: Cache Wonderful Toolchain
+        id: cache-wf
+        uses: actions/cache@v4
+        with:
+          path: /opt/wonderful
+          key: wonderful-blocksds-libmad-x86_64-v1
 
-      - name: Build
-        run: make
+      - name: Install Wonderful Toolchain
+        if: steps.cache-wf.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y ca-certificates
+          sudo mkdir -p /opt/wonderful
+          sudo chown -R "$USER" /opt/wonderful
+          curl -L https://wonderful.asie.pl/bootstrap/wf-bootstrap-x86_64.tar.gz \
+            | tar -xz -C /opt/wonderful
+          /opt/wonderful/bin/wf-pacman -Syu --noconfirm wf-tools
+          /opt/wonderful/bin/wf-config repo enable blocksds
+          /opt/wonderful/bin/wf-pacman -Syu --noconfirm
+          /opt/wonderful/bin/wf-pacman -S --noconfirm blocksds-toolchain blocksds-libmad
 
-      - name: Upload ROM
+      - name: Configure environment
+        run: |
+          echo "/opt/wonderful/bin" >> $GITHUB_PATH
+          echo "WONDERFUL_TOOLCHAIN=/opt/wonderful" >> $GITHUB_ENV
+          echo "BLOCKSDS=/opt/wonderful/thirdparty/blocksds/core" >> $GITHUB_ENV
+          echo "BLOCKSDSEXT=/opt/wonderful/thirdparty/blocksds/external" >> $GITHUB_ENV
+
+      - name: Build ARM7
+        run: make -f arm7/Makefile -j$(nproc)
+
+      - name: Build ARM9
+        run: make -f arm9/Makefile -j$(nproc)
+
+      - name: Link ROM
+        run: make DSi_MP3_Player.nds
+
+      - name: Verify ROM size
+        run: |
+          SIZE=$(stat -c%s DSi_MP3_Player.nds)
+          MAX=$((32 * 1024 * 1024))
+          echo "ROM size: $SIZE bytes (limit: $MAX)"
+          if [ "$SIZE" -gt "$MAX" ]; then
+            echo "::error file=DSi_MP3_Player.nds::ROM exceeds 32 MB DSi card limit ($SIZE bytes)"
+            exit 1
+          fi
+
+      - name: Upload ROM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build
-          path: "*.nds"
-          if-no-files-found: error
+          name: DSi_MP3_Player-${{ github.sha }}
+          path: DSi_MP3_Player.nds
+          retention-days: 14
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `### Build succeeded\n\nDownload **DSi_MP3_Player.nds** from the [Actions run](${runUrl}) artifacts tab.\n\nCommit: \`${context.sha.slice(0,7)}\``
+            });
+
+      - name: Annotate on failure
+        if: failure()
+        run: echo "::error::Build failed — check the steps above for details"
